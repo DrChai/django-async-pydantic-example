@@ -47,7 +47,7 @@ async def completion(body: CompletionRequest, request: HttpRequest):
     return completion_resp
 
 
-@gpt_router.get('completion/stats', permissions=[permissions.IsAuthenticated,])
+@gpt_router.get('completion/stats', permissions=[permissions.IsAuthenticated, ])
 async def stats(request: HttpRequest):
     connection = redis.Redis(password=os.environ.get('REDIS_PWD'), decode_responses=True)
     user = request.user
