@@ -1,2 +1,2 @@
 # django-async-pydantic-example
-Django Example of integrate with Pydantic and Async framework
+Django Example of integration with Pydantic and Async framework

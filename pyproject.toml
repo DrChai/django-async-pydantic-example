@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "django-router"
+version = "0.1.0"
+description = "fully annotated Route makes Django views friendly to Pydantic and asyncio."
+authors = ["Ed C. <edwardc@acrossor.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "django_router"}]
+exclude = ["example/"]
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = "^1.10.8"
+Django = "^4.1"
+[tool.poetry.group.dev.dependencies]
+uvicorn = {version = ">=0.12.0", extras = ["standard"]}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

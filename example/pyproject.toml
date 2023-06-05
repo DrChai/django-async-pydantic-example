@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "example"
+version = "0.1.0"
+description = "Example of how to integrate with Pydantic and Async Framework to a Django project"
+authors = ["Ed C. <edwardc@acrossor.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+django = "^4.2.1"
+pydantic = "^1.10.8"
+django-router = {path = "..", develop = true}
+
+
+[tool.poetry.group.demo.dependencies]
+openai = "^0.27.7"
+uvicorn = "^0.22.0"
+redis = "^4.5.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
