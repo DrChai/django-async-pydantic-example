@@ -5,7 +5,7 @@ Django Example of integration with Pydantic and Async framework
 When building a RESTful API on Django, [Django REST framework](https://www.django-rest-framework.org/) is probably the first framework that comes to mind. It provides all the necessary functions for production. After using DRF for years, it became evident that the performance of core functionality - data validation had limitations. Considering to get benefits of [Pydantic](https://docs.pydantic.dev/latest/)(validation logic implemented in Rust) and asyncio, a few scripts in [django_router]() and related [example]() may help.
 
 ### Mitigated Approach
-Rewrite DRF's `APIView` to make it asynchronous, and use Pydantic as your data serialization and validation:
+Rewrite DRF's `APIView` to make it [asynchronous](https://github.com/DrChai/django-async-pydantic-example/blob/main/django_router/views.py#L13), and use Pydantic as your data serialization and validation:
 ```python
 #schemas.py
 class QuestionPost(BaseModel):
@@ -32,9 +32,9 @@ class AsyncPollsDetail(AsyncAPIView):
         return JsonResponse(data.dict())
     #...
 ```
-More examples in [polls]()(same application in Django official tutorial) 
+More examples in [polls](https://github.com/DrChai/django-async-pydantic-example/blob/main/example/polls/views.py)(same application in Django official tutorial) 
 ### Spiciy Approach
-To take the step further and make the whole interface in `FastAPI` manner. There is a real-world example in [gpt]() application. `def completion()` returns the response to the client immediately once the awaitable `openai.Completion.acreate()` which interacts with the ChatGPT endpoint yields a result. It then arranges with `asyncio.Task` in a separate thread to handle IO jobs, such as saving the record to the database. 
+To take the step further and make the whole interface in `FastAPI` manner. A decorator [`Router`](https://github.com/DrChai/django-async-pydantic-example/blob/main/django_router/routing.py#L286) is provided and a real-world example can be found in the [gpt](https://github.com/DrChai/django-async-pydantic-example/blob/main/example/gpt/views.py) application. `def completion()` returns the response to the client immediately once the awaitable `openai.Completion.acreate()` which interacts with the ChatGPT endpoint yields a result. It then arranges with `asyncio.Task` in a separate thread to handle IO jobs, such as saving the record to the database. 
 ```python
 #views.py
 gpt_router = Router(authentication_classes=[authentication.BasicAuthentication, ])
