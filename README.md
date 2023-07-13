@@ -4,7 +4,7 @@ Django Example of integration with Pydantic and Async framework
 ## Background
 When building a RESTful API on Django, [Django REST framework](https://www.django-rest-framework.org/) is probably the first framework that comes to mind. It provides all the necessary functions for production. After using DRF for years, it became evident that the performance of core functionality - data validation had limitations. Considering to get benefits of [Pydantic](https://docs.pydantic.dev/latest/)(validation logic implemented in Rust) and asyncio, a few scripts in [django_router]() and related [example]() may help.
 
-### 😌 Mitigated Approach
+### 😌 Mitigation Approach
 Rewrite DRF's `APIView` to make it [asynchronous](https://github.com/DrChai/django-async-pydantic-example/blob/main/django_router/views.py#L13), and use Pydantic as your data serialization and validation:
 ```python
 #schemas.py
