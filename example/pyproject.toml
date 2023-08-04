@@ -9,14 +9,14 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 django = "^4.2.1"
-pydantic = "^1.10.8"
+pydantic = "^2.0.2"
 django-router = {path = "..", develop = true}
 
 
 [tool.poetry.group.demo.dependencies]
 openai = "^0.27.7"
 uvicorn = "^0.22.0"
-redis = "^4.5.5"
+redis = "^4.6.0"
 
 [build-system]
 requires = ["poetry-core"]

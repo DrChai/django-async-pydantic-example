@@ -47,7 +47,7 @@ class AsyncPollsList(AsyncAPIView):
         post = schemas.QuestionPost(**get_body(request))
         question = await self.atomic_operation(post)
         fetched_question = await Question.objects.prefetch_related('choice_set').aget(pk=question.pk)
-        data = schemas.QuestionOut.from_orm(fetched_question)
+        data = schemas.QuestionOut.model_validate(fetched_question)
         return JsonResponse(data.dict())
 
 
@@ -57,15 +57,15 @@ class AsyncPollsDetail(AsyncAPIView):
 
     async def get(self, request, *args, **kwargs) -> JsonResponse:
         instance = await aget_object_or_404(Question.objects.prefetch_related('choice_set',), pk=kwargs['pk'])
-        data = schemas.QuestionOut.from_orm(instance)
-        return JsonResponse(data.dict())
+        data = schemas.QuestionOut.model_validate(instance)
+        return JsonResponse(data.model_dump())
 
     async def patch(self, request, *args, **kwargs) -> JsonResponse:
         instance = await aget_object_or_404(Question.objects.prefetch_related('choice_set',), pk=kwargs['pk'])
-        current_data = schemas.QuestionUpdate.from_orm(instance)
-        patch_data = schemas.QuestionUpdate(**get_body(request)).dict(exclude_unset=True)
-        updated_data = current_data.copy(update=patch_data)
-        for attr, value in updated_data.dict().items():
+        current_data = schemas.QuestionUpdate.model_validate(instance)
+        patch_data = schemas.QuestionUpdate(**get_body(request)).model_dump(exclude_unset=True)
+        updated_data = current_data.model_copy(update=patch_data)
+        for attr, value in updated_data.model_dump().items():
             setattr(instance, attr, value)
         await instance.asave()
-        return JsonResponse(schemas.QuestionOut.from_orm(instance).dict())
+        return JsonResponse(schemas.QuestionOut.model_validate(instance).model_dump())

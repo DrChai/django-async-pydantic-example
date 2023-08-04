@@ -2,22 +2,40 @@ import asyncio
 from asgiref.sync import sync_to_async
 import codecs
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 import inspect
 from io import BytesIO
 import json
 import re
-from typing import Any, ForwardRef, Sequence, Type
+from typing import Annotated, Any, ForwardRef, Sequence, Type
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
-from pydantic.error_wrappers import ErrorWrapper
-from pydantic.fields import ModelField, FieldInfo, Required, Field, Undefined
-from pydantic.schema import is_dataclass, get_annotation_from_field_info
-from pydantic.typing import evaluate_forwardref
-from pydantic import BaseConfig, BaseModel, MissingError, ValidationError
+from pydantic.fields import FieldInfo, Field
+from pydantic._internal._typing_extra import eval_type_lenient
+from pydantic import BaseModel, ValidationError, TypeAdapter
+from pydantic_core import PydanticUndefined
 
 from .types import EndpointFunc
 from . import exceptions
+
+
+def get_missing_field_error(loc: tuple[str, ...]) -> dict[str, Any]:
+    error = ValidationError.from_exception_data(
+        "Field required", [{"type": "missing", "loc": loc, "input": {}}]
+    ).errors()[0]
+    error["input"] = None
+    return error  # type: ignore[return-value]
+
+
+def _regenerate_error_with_loc(
+    *, errors: Sequence[Any], loc_prefix: tuple[str | int, ...]
+) -> list[dict[str, Any]]:
+    updated_loc_errors: list[Any] = [
+        {**err, "loc": loc_prefix + err.get("loc", ())}
+        for err in errors
+    ]
+
+    return updated_loc_errors
 
 
 @dataclass
@@ -27,15 +45,30 @@ class EndpointParam:
     field_info: FieldInfo
 
     def __post_init__(self):
-        self.model_field = ModelField(
-            name=self.param_name,
-            class_validators={},
-            model_config=BaseConfig,
-            type_=self.annotation,
-            default=self.field_info.default,
-            required=self.field_info.default in (Required, Undefined),
-            field_info=self.field_info,
+        self._type_adapter: TypeAdapter[Any] = TypeAdapter(
+            Annotated[self.field_info.annotation, self.field_info]
         )
+
+    def validate(
+        self,
+        value: Any,
+        values: dict[str, Any] = {},  # noqa: B006
+        *,
+        loc: tuple[int | str, ...] = (),
+    ) -> tuple[Any, list[dict[str, Any]] | None]:
+        try:
+            return (
+                self._type_adapter.validate_python(value, from_attributes=True),
+                None,
+            )
+        except ValidationError as exc:
+            return None, _regenerate_error_with_loc(
+                errors=exc.errors(), loc_prefix=loc
+            )
+
+    @property
+    def alias(self) -> str:
+        return self.field_info.alias or self.name
 
     @property
     def default(self) -> Any | None:
@@ -43,7 +76,7 @@ class EndpointParam:
 
     @property
     def required(self) -> bool:
-        return self.field_info.default in (Required, Undefined)
+        return self.field_info.default in (PydanticUndefined,)
 
     @property
     def kind(self):
@@ -51,7 +84,7 @@ class EndpointParam:
 
     @property
     def param_type(self):
-        return self.field_info.extra['param_type']
+        return self.field_info.json_schema_extra['param_type']
 
 
 _PATH_PARAMETER_COMPONENT_RE = r"<(?:(?P<converter>[^>:]+):)?(?P<parameter>[^>]+)>"
@@ -81,12 +114,12 @@ def analyze_param(
     field_info = None
     field = None
     if isinstance(param.default, FieldInfo):  # foo: = Field(..., discriminator='pet_type')
-        assert 'param_type' in param.default.extra, 'unidentified FieldInfo. #FE005'
+        assert 'param_type' in param.default.json_schema_extra, 'unidentified FieldInfo. #FE005'
         field_info = param.default
     if issubclass(param.annotation, (HttpRequest,)):
         assert (field_info is None), f"Cannot specify annotation for {param.annotation!r}. #FE003"
     elif field_info is None:
-        default_value = param.default if param.default is not inspect.Signature.empty else Required
+        default_value = param.default if param.default is not inspect.Signature.empty else PydanticUndefined
         if is_path_param:
             assert is_scalar(param), 'wrong type. #FE004'
             field_info = Field(param_type='path')
@@ -94,11 +127,7 @@ def analyze_param(
             field_info = Field(param_type='query', default=default_value)
         else:
             field_info = Field(param_type='body', default=default_value)
-        annotation = get_annotation_from_field_info(
-            param.annotation if param.annotation is not inspect.Signature.empty else Any,
-            field_info,
-            param_name,
-        )
+        annotation = param.annotation if param.annotation is not inspect.Signature.empty else Any
         field = EndpointParam(
             param_name=param_name,
             annotation=annotation,
@@ -110,7 +139,7 @@ def analyze_param(
 def get_typed_annotation(annotation: Any, globalns: dict[str, Any]) -> Any:
     if isinstance(annotation, str):
         annotation = ForwardRef(annotation)
-        annotation = evaluate_forwardref(annotation, globalns, globalns)
+        annotation = eval_type_lenient(annotation, globalns, globalns)
     return annotation
 
 
@@ -158,9 +187,15 @@ def get_body(request: Type[HttpRequest]) -> Any:
         try:
             return json.load(decoded_stream) if content_length else {}
         except json.JSONDecodeError as exc:
-            raise ValidationError(
-                [ErrorWrapper(exc, ("body", exc.pos))], BaseModel
-            )
+            raise exceptions.APIException({"detail": [
+                {
+                    "type": "json_invalid",
+                    "loc": ("body", exc.pos),
+                    "msg": "JSON decode error",
+                    "input": {},
+                    "ctx": {"error": exc.msg},
+                }
+            ]})
     elif ct == 'form-data':  # TODO: need a pr
         raise NotImplementedError
     elif ct == 'application/x-www-form-urlencoded':
@@ -171,8 +206,8 @@ def get_body(request: Type[HttpRequest]) -> Any:
 async def validate_request_body(
         required_params: list[EndpointParam],
         received_body: dict[str, Any] | None,
-) -> tuple[dict[str, Any], list[ErrorWrapper]]:
-    errors: list[ErrorWrapper] = []
+) -> tuple[dict[str, Any], list[Exception]]:
+    errors: list[Exception] = []
     values: dict[str, Any] = {}
     if required_params:
         nested = len(required_params) == 1
@@ -189,19 +224,19 @@ async def validate_request_body(
                 try:
                     value = received_body.get(field.param_name)
                 except AttributeError:
-                    errors.append(ErrorWrapper(MissingError(), loc=loc))
+                    errors.append(get_missing_field_error(loc=loc))
                     continue
             if (
                     value is None
             ):
                 if field.required:
-                    errors.append(ErrorWrapper(MissingError(), loc=loc))
+                    errors.append(get_missing_field_error(loc=loc))
                 else:
                     values[field.param_name] = deepcopy(field.default)
                 continue
-            v_, errors_ = field.model_field.validate(value, values, loc=loc)
+            v_, errors_ = field.validate(value, values, loc=loc)
 
-            if isinstance(errors_, ErrorWrapper):
+            if isinstance(errors_, Exception):
                 errors.append(errors_)
             else:
                 values[field.param_name] = v_
@@ -211,25 +246,23 @@ async def validate_request_body(
 def validate_request_params(
         required_params: list[EndpointParam],
         received_params: dict[str, Any],
-) -> tuple[dict[str, Any], list[ErrorWrapper]]:
-    errors: list[ErrorWrapper] = []
+) -> tuple[dict[str, Any], list[Exception]]:
+    errors: list[Exception] = []
     values: dict[str, Any] = {}
     for param in required_params:
         value = received_params.get(param.param_name)
         if value is None:
             if param.required:
                 errors.append(
-                    ErrorWrapper(
-                        MissingError(), loc=(param.param_type, param.param_name)
-                    )
+                    get_missing_field_error(loc=(param.param_type, param.param_name))
                 )
             else:
                 values[param.param_name] = deepcopy(param.default)
             continue
-        v_, errors_ = param.model_field.validate(
-            value, values, loc=(param.param_type, param.model_field.alias)
+        v_, errors_ = param.validate(
+            value, values, loc=(param.param_type, param.alias)
         )
-        if isinstance(errors_, ErrorWrapper):
+        if isinstance(errors_, Exception):
             errors.append(errors_)
         # elif isinstance(errors_, list):
         #     errors.extend(errors_)
