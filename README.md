@@ -2,20 +2,22 @@
 Django Example of integration with Pydantic and Async framework
 
 ## Background
-When building a RESTful API on Django, [Django REST framework](https://www.django-rest-framework.org/) is probably the first framework that comes to mind. It provides all the necessary functions for production. After using DRF for years, it became evident that the performance of core functionality - data validation had limitations. Considering to get benefits of [Pydantic](https://docs.pydantic.dev/latest/)(validation logic implemented in Rust) and asyncio, a few scripts in [django_router]() and related [example]() may help.
+When building a RESTful API on Django, [Django REST framework](https://www.django-rest-framework.org/) is probably the first framework that comes to mind. It provides all the necessary functions for production. After using DRF for years, it became evident that the performance of core functionality - data validation had limitations. Considering to get benefits of [Pydantic V2](https://docs.pydantic.dev/latest/)(validation logic implemented in Rust) and asyncio, a few scripts in [django_router]() and related [example]() may help.
 
 ### 😌 Mitigation Approach
 Rewrite DRF's `APIView` to make it [asynchronous](https://github.com/DrChai/django-async-pydantic-example/blob/main/django_router/views.py#L13), and use Pydantic as your data serialization and validation:
 ```python
 #schemas.py
 class QuestionPost(BaseModel):
+    # Pydantic V2:
+    model_config = ConfigDict(from_attributes=True)
     pub_date: datetime | None = Field(default_factory=timezone.now)
     question_text: constr(max_length=200)
     choice_set: list[ChoicePost]
-
-    class Config:
-        orm_mode = True
-        getter_dict = ModelGetterDict
+    # Pydantic V1:
+    # class Config:
+        # orm_mode = True
+        # getter_dict = ModelGetterDict
 
 
 class QuestionOut(QuestionPost):

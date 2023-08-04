@@ -1,13 +1,16 @@
 from datetime import datetime
 from functools import reduce
-from typing import Any
+from typing import Annotated, Any, TypeVar
+from typing_extensions import deprecated
 from django.db.models import Manager
 from django.db.models.fields.files import ImageFieldFile
 from django.utils import timezone
-from pydantic import BaseModel, Field, NonNegativeInt, constr
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, constr, WrapValidator
 from pydantic.utils import GetterDict
 
 
+# @deprecated used in Pydantic V1
+@deprecated('GetterDict is removed in Pydantic V2')
 class ModelGetterDict(GetterDict):
 
     def get(self, key: Any, default: Any = None) -> Any:
@@ -27,23 +30,29 @@ class ModelGetterDict(GetterDict):
         return attr
 
 
+def validate_relatedfields(v, handler):
+    related_fields = v
+    if isinstance(v, Manager):
+        # we don't want to bother with further validation, just return the new value
+        related_fields = list(v.all())
+    return handler(related_fields)
+
+
+RelatedFieldType = TypeVar('RelatedFieldType', bound='BaseModel')
+RelatedFields = Annotated[list[RelatedFieldType], WrapValidator(validate_relatedfields)]
+
+
 class ChoicePost(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     choice_text: constr(max_length=200)
     votes: NonNegativeInt
 
-    class Config:
-        orm_mode = True
-        getter_dict = ModelGetterDict
-
 
 class QuestionPost(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     pub_date: datetime | None = Field(default_factory=timezone.now)
     question_text: constr(max_length=200)
-    choice_set: list[ChoicePost]
-
-    class Config:
-        orm_mode = True
-        getter_dict = ModelGetterDict
+    choice_set: RelatedFields[ChoicePost]
 
 
 class QuestionOut(QuestionPost):
@@ -55,9 +64,6 @@ class QuestionListOut(BaseModel):
 
 
 class QuestionUpdate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     question_text: constr(max_length=20)
     pub_date: datetime | None
-
-    class Config:
-        orm_mode = True
-        getter_dict = ModelGetterDict

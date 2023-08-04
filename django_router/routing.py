@@ -8,7 +8,7 @@ from asgiref.sync import sync_to_async
 from django.db import models
 from django.http import HttpRequest, HttpResponse, JsonResponse
 import pydantic
-from pydantic.error_wrappers import ErrorWrapper
+# @deprecated: ErrorWrapper removed in Pydantic V2
 from . import exceptions
 from .types import Authentication, DjangoViewFunc, EndpointFunc, Permission, TaskFunc
 from .utils import (
@@ -208,9 +208,9 @@ class Router:
 
     async def get_endpoint_params(
             self, route: Route, request: Type[HttpRequest], path_kwargs: dict[str, Any]
-    ) -> tuple[dict[str, Any], list[ErrorWrapper]]:
+    ) -> tuple[dict[str, Any], list[Exception]]:
         values: dict[str, Any] = {}
-        errors: list[ErrorWrapper] = []
+        errors: list[Exception] = []
         user, auth = await route.authenticate(request)
         await route.check_permission(request)
         request.check_object_permissions = functools.partial(route.check_object_permissions, request)
